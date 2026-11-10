@@ -1,0 +1,18 @@
+body.light { background:#f4f7f6; color:#0f271b; }
+body.dark  { background:#0b1d13; color:#e8f6ec; }
+
+.sidebar {
+  width: 240px;
+  min-height: 100vh;
+  background: #103c28;
+  color: #fff;
+}
+.sidebar .list-group-item { cursor:pointer; border:0; color:#e9f4ef; background:transparent; }
+.sidebar .list-group-item.active { background: rgba(255,255,255,0.15); color:#fff; }
+
+.card { background: rgba(255,255,255,0.9); border:0; }
+body.dark .card { background: rgba(255,255,255,0.06); }
+
+.table { color: inherit; }
+
+

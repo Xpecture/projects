@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>IDS Panel</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="{{ theme }}">
+  <div class="d-flex" id="wrapper">
+    <aside class="sidebar border-end">
+      <div class="sidebar-heading">IDS Panel</div>
+      <div class="list-group list-group-flush">
+        <a class="list-group-item list-group-item-action active" id="tab-dashboard" onclick="showTab('dashboard')">Dashboard</a>
+        <a class="list-group-item list-group-item-action" id="tab-live" onclick="showTab('livelogs')">Live Logs</a>
+        <a class="list-group-item list-group-item-action" id="tab-stats" onclick="showTab('stats')">Attack Stats</a>
+        <a class="list-group-item list-group-item-action" id="tab-settings" onclick="showTab('settings')">Settings</a>
+      </div>
+      <div class="p-2 small text-muted">
+        Tip: run <code>python stimulate_dos.py</code> or <code>python stimulate_probe.py</code> to demo attacks (safe, local).
+      </div>
+    </aside>
+
+    <main class="w-100">
+      <nav class="navbar border-bottom">
+        <div class="container-fluid">
+          <div>
+            <button class="btn btn-success me-2" onclick="startSniffer()">Start</button>
+            <button class="btn btn-danger me-2" onclick="stopSniffer()">Stop</button>
+            <button class="btn btn-secondary" onclick="manualRefresh()">Refresh</button>
+          </div>
+          <div class="ms-auto d-flex align-items-center gap-3">
+            <span id="status-text">Sniffer running: UNKNOWN</span>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="themeSwitch" onchange="toggleTheme(this.checked)">
+              <label class="form-check-label" for="themeSwitch">Dark</label>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      <div class="container-fluid p-4">
+        <!-- Dashboard -->
+        <section id="dashboard" class="tab-pane">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <div class="card p-3">
+                <div class="text-muted">Total alerts (recent)</div>
+                <div class="display-5" id="metric-total">0</div>
+                <div class="small text-muted">Last 1000 rows</div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="card p-3">
+                <div class="text-muted">Latest prediction</div>
+                <div class="display-5" id="metric-latest">—</div>
+                <div class="small text-muted">Most recent alert</div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="card p-3">
+                <div class="text-muted">Sniffer state</div>
+                <div class="display-5" id="metric-sniffer">OFF</div>
+                <div class="small text-muted">Start / Stop the live sniffer</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row g-3 mt-1">
+            <div class="col-lg-6">
+              <div class="card p-3">
+                <div class="d-flex justify-content-between align-items-center">
+                  <div class="fw-semibold">Recent Predictions</div>
+                  <div class="small text-muted" id="quick-stats"></div>
+                </div>
+                <canvas id="donutChart" height="260"></canvas>
+              </div>
+            </div>
+            <div class="col-lg-6">
+              <div class="card p-3">
+                <div class="fw-semibold mb-2">Latest alerts</div>
+                <div class="table-responsive" style="max-height:320px;overflow:auto">
+                  <table class="table table-sm">
+                    <thead><tr><th>#</th><th>Time</th><th>Src</th><th>Dst</th><th>Pred</th></tr></thead>
+                    <tbody id="latest-tb"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Live logs -->
+        <section id="livelogs" class="tab-pane" style="display:none">
+          <h3>Live Packet Logs</h3>
+          <div class="table-responsive">
+            <table class="table">
+              <thead><tr><th>#</th><th>Time</th><th>Source</th><th>Destination</th><th>Proto</th><th>Prediction</th><th>Score</th></tr></thead>
+              <tbody id="live-tb"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Stats -->
+        <section id="stats" class="tab-pane" style="display:none">
+          <h3>Attack Stats</h3>
+          <div class="row g-3">
+            <div class="col-md-8">
+              <div class="card p-3">
+                <canvas id="barChart" height="280"></canvas>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="card p-3">
+                <div class="fw-semibold">Counts</div>
+                <div id="counts-box" class="mt-2 small"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Settings -->
+        <section id="settings" class="tab-pane" style="display:none">
+          <h3>Settings</h3>
+          <div class="card p-3">
+            <div class="mb-3">
+              <label class="form-label">Sniffer interface (use exact Scapy iface string)</label>
+              <input id="set_iface" class="form-control" placeholder="e.g. \\Device\\NPF_{...} or lo" />
+              <div class="form-text">Windows: copy the value from <code>get_if_list()</code> or Device Manager (Npcap).</div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Sniffer mode</label>
+              <select id="set_mode" class="form-select">
+                <option value="classify">classify (use model)</option>
+                <option value="baseline">baseline (force normal)</option>
+              </select>
+              <div class="form-text">Use <b>baseline</b> to demo “all normal” until you run a stimulator.</div>
+            </div>
+
+            <div class="mb-3 form-check">
+              <input id="set_autostart" type="checkbox" class="form-check-input"/>
+              <label for="set_autostart" class="form-check-label">Auto-start sniffer on server start</label>
+            </div>
+
+            <div class="mb-3 form-check">
+              <input id="set_clearstart" type="checkbox" class="form-check-input"/>
+              <label for="set_clearstart" class="form-check-label">Clear alerts when I press Start</label>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Refresh interval (ms)</label>
+              <input id="set_refresh" type="number" class="form-control"/>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Theme</label>
+              <select id="set_theme" class="form-select">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+            </div>
+
+            <div class="d-flex gap-2">
+              <button class="btn btn-primary" onclick="saveSettings()">Save</button>
+              <button class="btn btn-secondary" onclick="loadSettings()">Reload</button>
+              <button class="btn btn-danger" onclick="clearAll()">Clear Alerts</button>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+<script>
+let refreshMs = 1000;
+let donutChart = null;
+let barChart = null;
+let pollTimer = null;
+
+// ------------- Tabs -------------
+function showTab(tab){
+  document.querySelectorAll('.tab-pane').forEach(e=> e.style.display='none');
+  document.getElementById(tab).style.display='block';
+  document.querySelectorAll('.list-group-item').forEach(a=>a.classList.remove('active'));
+  const map = {dashboard:'tab-dashboard',livelogs:'tab-live',stats:'tab-stats',settings:'tab-settings'};
+  document.getElementById(map[tab]).classList.add('active');
+
+  if(tab==='dashboard'){ updateStats(); loadLatest(); }
+  if(tab==='livelogs'){ loadLive(); }
+  if(tab==='stats'){ updateStats(); }
+  if(tab==='settings'){ loadSettings(); }
+}
+
+function manualRefresh(){
+  const visible = Array.from(document.querySelectorAll('.tab-pane')).find(x=>x.style.display!=='none').id;
+  if(visible==='dashboard'){ updateStats(); loadLatest(); }
+  if(visible==='livelogs'){ loadLive(); }
+  if(visible==='stats'){ updateStats(); }
+  updateStatus();
+}
+
+// ------------- Theme -------------
+function applyTheme(t){
+  document.body.className = t;
+  document.getElementById('themeSwitch').checked = (t==='dark');
+}
+function toggleTheme(on){ 
+  const t = on ? 'dark' : 'light';
+  fetch('/settings',{method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({theme:t})})
+  .then(()=>applyTheme(t));
+}
+
+// ------------- Sniffer controls -------------
+async function startSniffer(){
+  await fetch('/sniffer/start',{method:'POST'});
+  updateStatus();
+}
+async function stopSniffer(){
+  await fetch('/sniffer/stop',{method:'POST'});
+  updateStatus();
+}
+async function updateStatus(){
+  try{
+    const j = await fetch('/sniffer/status').then(r=>r.json());
+    document.getElementById('status-text').innerText = 'Sniffer running: ' + (j.running?'YES':'NO');
+    document.getElementById('metric-sniffer').innerText = j.running ? 'ON' : 'OFF';
+  }catch(_){ /* ignore */ }
+}
+
+// ------------- Data -------------
+async function loadLive(){
+  const data = await fetch('/alerts?limit=500').then(r=>r.json());
+  const tb = document.getElementById('live-tb'); tb.innerHTML='';
+  data.forEach(a=>{
+    const tr = document.createElement('tr');
+    const t = a.ts ? new Date(a.ts).toLocaleTimeString() : '';
+    tr.innerHTML = `<td>${a.id}</td><td>${t}</td><td>${a.src}</td><td>${a.dst}</td><td>${a.proto}</td><td>${a.prediction}</td><td>${Number(a.score||0).toFixed(2)}</td>`;
+    tb.appendChild(tr);
+  });
+}
+async function loadLatest(){
+  const latest = await fetch('/alerts?limit=10').then(r=>r.json());
+  const tb = document.getElementById('latest-tb'); tb.innerHTML='';
+  latest.forEach(a=>{
+    const t = a.ts ? new Date(a.ts).toLocaleTimeString() : '';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${a.id}</td><td>${t}</td><td>${a.src}</td><td>${a.dst}</td><td>${a.prediction}</td>`;
+    tb.appendChild(tr);
+  });
+}
+async function updateStats(){
+  const j = await fetch('/stats').then(r=>r.json());
+  document.getElementById('metric-total').innerText = j.total || 0;
+  document.getElementById('metric-latest').innerText = j.latest_pred || '—';
+
+  const by = j.by_prediction || {};
+  const labels = Object.keys(by).length ? Object.keys(by) : ['normal'];
+  const values = Object.keys(by).length ? Object.values(by) : [0];
+  document.getElementById('quick-stats').innerText = labels.map((k,i)=>`${k}: ${values[i]}`).join('  ');
+
+  // Donut (update without destroying => no blinking)
+  if(!donutChart){
+    donutChart = new Chart(document.getElementById('donutChart'), {
+      type:'doughnut',
+      data:{ labels: labels, datasets:[{ data: values }]},
+      options:{ animation:{duration:200}, plugins:{legend:{position:'bottom'}} }
+    });
+  }else{
+    donutChart.data.labels = labels;
+    donutChart.data.datasets[0].data = values;
+    donutChart.update();
+  }
+
+  // Bar chart
+  if(!barChart){
+    barChart = new Chart(document.getElementById('barChart'), {
+      type:'bar',
+      data:{ labels: labels, datasets:[{ label:'Count', data: values }]},
+      options:{ animation:{duration:200}, scales:{y:{beginAtZero:true}} }
+    });
+  }else{
+    barChart.data.labels = labels;
+    barChart.data.datasets[0].data = values;
+    barChart.update();
+  }
+
+  // counts box
+  const box = document.getElementById('counts-box');
+  box.innerHTML = labels.map((k,i)=>`<div><b>${k}:</b> ${values[i]}</div>`).join('');
+}
+
+// ------------- Settings -------------
+async function loadSettings(){
+  const s = await fetch('/settings').then(r=>r.json());
+  document.getElementById('set_iface').value = s.iface || '';
+  document.getElementById('set_mode').value = s.mode || 'classify';
+  document.getElementById('set_refresh').value = s.refresh_interval || 1000;
+  document.getElementById('set_autostart').checked = !!s.auto_start;
+  document.getElementById('set_clearstart').checked = !!s.clear_on_start;
+  document.getElementById('set_theme').value = s.theme || 'light';
+  refreshMs = s.refresh_interval || 1000;
+  applyTheme(s.theme || 'light');
+}
+async function saveSettings(){
+  const body = {
+    iface: document.getElementById('set_iface').value,
+    mode:  document.getElementById('set_mode').value,
+    refresh_interval: Number(document.getElementById('set_refresh').value) || 1000,
+    auto_start: document.getElementById('set_autostart').checked,
+    clear_on_start: document.getElementById('set_clearstart').checked,
+    theme: document.getElementById('set_theme').value
+  };
+  await fetch('/settings', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body)});
+  await loadSettings();
+  alert('Saved');
+}
+async function clearAll(){
+  await fetch('/clear_alerts',{method:'POST'});
+  manualRefresh();
+}
+
+// ------------- Poll loop (smooth) -------------
+function startPolling(){
+  if(pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(()=>{
+    const visible = Array.from(document.querySelectorAll('.tab-pane')).find(x=>x.style.display!=='none').id;
+    if(visible==='dashboard'){ updateStats(); }
+    if(visible==='livelogs'){ loadLive(); }
+    if(visible==='stats'){ updateStats(); }
+    updateStatus();
+  }, refreshMs);
+}
+
+// init
+showTab('dashboard');
+loadSettings().then(()=>{
+  updateStatus();
+  startPolling();
+});
+</script>
+</body>
+</html>

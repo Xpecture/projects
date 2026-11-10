@@ -1,0 +1,11 @@
+{
+  "theme": "light",
+  "iface": "",
+  "mode": "classify",
+  "refresh_interval": 5000,
+  "auto_start": true,
+  "clear_on_start": true,
+  "sniffer_iface": "",
+  "sniffer_mode": "classify",
+  "auto_start_sniffer": true
+}
